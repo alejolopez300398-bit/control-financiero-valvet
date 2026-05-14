@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="es-CO">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#6e2696" />
+  <meta name="description" content="Registro operativo en campo — Valvet" />
+  <title>Valvet — Registro operativo</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand-lockup" aria-label="Valvet clínica veterinaria">
+      <div class="brand-copy">
+        <strong class="brand-name">ValVet</strong>
+        <span class="brand-service">Veterinaria a domicilio</span>
+      </div>
+    </div>
+    <p class="app-tagline">Control financiero</p>
+  </header>
+
+  <main class="app-main">
+    <div id="status-banner" class="status-banner" role="status" aria-live="polite" hidden></div>
+
+    <form id="registro-form" class="registro-form" novalidate>
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Fecha y concepto</legend>
+
+        <div class="field">
+          <label class="label" for="fecha">Fecha</label>
+          <div class="date-picker" id="fecha_picker">
+            <input class="input input-date-display" type="text" id="fecha_display" placeholder="Selecciona una fecha" readonly aria-controls="fecha_calendar" aria-expanded="false" required />
+            <input type="hidden" id="fecha" name="fecha" />
+            <button class="date-picker-toggle" type="button" id="fecha_toggle" aria-label="Abrir calendario" aria-controls="fecha_calendar" aria-expanded="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1a3 3 0 0 1 3 3v11a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V7a3 3 0 0 1 3-3h1V3a1 1 0 0 1 1-1Zm12 8H5v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8ZM6 6a1 1 0 0 0-1 1v1h14V7a1 1 0 0 0-1-1H6Z" />
+              </svg>
+            </button>
+            <div class="date-popover" id="fecha_calendar" hidden>
+              <div class="date-popover-header">
+                <button class="date-nav-btn" type="button" id="fecha_prev" aria-label="Mes anterior">‹</button>
+                <strong class="date-month-label" id="fecha_month_label"></strong>
+                <button class="date-nav-btn" type="button" id="fecha_next" aria-label="Mes siguiente">›</button>
+              </div>
+              <div class="date-weekdays" aria-hidden="true">
+                <span>Lun</span>
+                <span>Mar</span>
+                <span>Mié</span>
+                <span>Jue</span>
+                <span>Vie</span>
+                <span>Sáb</span>
+                <span>Dom</span>
+              </div>
+              <div class="date-grid" id="fecha_grid" role="grid" aria-label="Calendario"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="field field-readonly">
+          <span class="label">Mes / año (automático)</span>
+          <output class="output-preview" id="mes_anio_preview" for="fecha">—</output>
+        </div>
+
+        <div class="field">
+          <label class="label" for="concepto">Concepto</label>
+          <input class="input input-combo" type="text" id="concepto" name="concepto" list="list-concepto" autocomplete="off" autocapitalize="sentences" placeholder="Buscar o escribir…" />
+          <datalist id="list-concepto"></datalist>
+        </div>
+      </fieldset>
+
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Paciente y tutor</legend>
+
+        <div class="field">
+          <label class="label" for="paciente">Paciente</label>
+          <input class="input input-combo" type="text" id="paciente" name="paciente" list="list-paciente" autocomplete="off" autocapitalize="words" placeholder="Nombre del paciente" />
+          <datalist id="list-paciente"></datalist>
+        </div>
+
+        <div class="field">
+          <label class="label" for="tutor">Tutor</label>
+          <input class="input input-combo" type="text" id="tutor" name="tutor" list="list-tutor" autocomplete="off" autocapitalize="words" placeholder="Nombre del tutor" />
+          <datalist id="list-tutor"></datalist>
+        </div>
+      </fieldset>
+
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Examen y observación</legend>
+
+        <div class="field">
+          <label class="label" for="tipo_examen">Tipo de examen</label>
+          <input class="input input-combo" type="text" id="tipo_examen" name="tipo_examen" list="list-tipo_examen" autocomplete="off" autocapitalize="sentences" placeholder="Buscar o escribir…" />
+          <datalist id="list-tipo_examen"></datalist>
+        </div>
+
+        <div class="field">
+          <label class="label" for="observacion">Observación</label>
+          <input class="input" type="text" id="observacion" name="observacion" autocomplete="off" autocapitalize="sentences" placeholder="Texto libre" />
+        </div>
+      </fieldset>
+
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Laboratorio y pagos</legend>
+
+        <div class="field">
+          <label class="label" for="laboratorio_profesional">Laboratorio / profesional</label>
+          <input class="input input-combo" type="text" id="laboratorio_profesional" name="laboratorio_profesional" list="list-laboratorio_profesional" autocomplete="off" autocapitalize="words" placeholder="Buscar o escribir…" />
+          <datalist id="list-laboratorio_profesional"></datalist>
+        </div>
+
+        <div class="field">
+          <label class="label" for="pago_tercero">Pago tercero</label>
+          <input class="input input-combo" type="text" id="pago_tercero" name="pago_tercero" list="list-pago_tercero" autocomplete="off" autocapitalize="sentences" placeholder="Buscar o escribir…" />
+          <datalist id="list-pago_tercero"></datalist>
+        </div>
+
+        <div class="field">
+          <label class="label" for="pago_a_valvet">Pago a Valvet</label>
+          <input class="input input-combo" type="text" id="pago_a_valvet" name="pago_a_valvet" list="list-pago_a_valvet" autocomplete="off" autocapitalize="sentences" placeholder="Buscar o escribir…" />
+          <datalist id="list-pago_a_valvet"></datalist>
+        </div>
+      </fieldset>
+
+      <fieldset class="fieldset fieldset-economico">
+        <legend class="fieldset-legend">Valores (COP)</legend>
+
+        <div class="field field-money">
+          <label class="label" for="ingresos">Ingresos</label>
+          <div class="money-wrap">
+            <span class="money-prefix" aria-hidden="true">$</span>
+            <input class="input input-money" type="text" inputmode="numeric" id="ingresos" name="ingresos" placeholder="0" aria-describedby="hint-money" />
+          </div>
+        </div>
+
+        <div class="field field-money">
+          <label class="label" for="salidas">Salidas</label>
+          <div class="money-wrap">
+            <span class="money-prefix" aria-hidden="true">$</span>
+            <input class="input input-money" type="text" inputmode="numeric" id="salidas" name="salidas" placeholder="0" aria-describedby="hint-money" />
+          </div>
+        </div>
+
+        <div class="field field-money field-readonly">
+          <span class="label" id="label-balance">Balance</span>
+          <div class="money-wrap money-wrap-readonly" aria-labelledby="label-balance">
+            <span class="money-prefix" aria-hidden="true">$</span>
+            <output class="output-money" id="balance" for="ingresos salidas">0</output>
+          </div>
+        </div>
+        <p id="hint-money" class="field-hint">Escribe solo números; se formatea como pesos colombianos (ej. $150.000).</p>
+      </fieldset>
+
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Facturación</legend>
+        <div class="field">
+          <label class="label" for="factura_electronica">Factura electrónica</label>
+          <input class="input" type="text" id="factura_electronica" name="factura_electronica" inputmode="text" autocomplete="off" placeholder="Referencia o número" />
+        </div>
+      </fieldset>
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary" id="btn-enviar">Guardar registro</button>
+      </div>
+    </form>
+  </main>
+
+  <footer class="app-footer">
+    <small class="footer-note">Conexión al servidor tras configurar <code>SCRIPT_URL</code> en <code>app.js</code>.</small>
+  </footer>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
