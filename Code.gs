@@ -4,10 +4,10 @@
  * que se reordenan; así no rompemos filas si alguien mueve una columna en la hoja.
  */
 
-var SPREADSHEET_ID = '1CBAC3Puz2hbO4mhqPkHnjzK65coefdYzZ_v43zoA1cM';
+var SPREADSHEET_ID = '1dmSLDEMn4V2cWlI-7hhSkjmeQEqtVdtKyDONnO2RuRQ';
 /** Máximo de filas a escanear para valores distintos (costo vs datos en campo). */
-var MAX_SCAN_ROWS = 4000;
-var MAX_STRING_LEN = 2000;
+var MAX_SCAN_ROWS = 8000;
+var MAX_STRING_LEN = 5000;
 
 function doGet(e) {
   try {
