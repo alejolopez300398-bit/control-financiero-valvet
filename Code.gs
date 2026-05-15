@@ -9,64 +9,6 @@ var SPREADSHEET_ID = '1CBAC3Puz2hbO4mhqPkHnjzK65coefdYzZ_v43zoA1cM';
 var MAX_SCAN_ROWS = 4000;
 var MAX_STRING_LEN = 2000;
 
-/**
- * Opciones base fusionadas con valores únicos ya registrados en la hoja.
- * POR QUÉ: `observacion` es texto libre en operación; no aporta lista fija ni meta de sugerencias.
- */
-var PREDEFINED = {
-  concepto: [
-    'Consulta',
-    'Compra insumos',
-    'Compra medicamentos',
-    'Control vacuna',
-    'Toma de examenes',
-    'Certificado nacional',
-    'Certificado internacional',
-    'Control medico',
-    'Inyectologia',
-    'Implantación microchip',
-    'Eutanasia',
-    'Ecografia',
-    'Hospitalizacion en casa',
-    'Procedimiento',
-    'Viaticos',
-    'Gastos empresa',
-    'Faja',
-    'Radiografia',
-    'Interconsulta',
-    'Papeleria',
-    'Turnos',
-    'Guarderia',
-    'Cytopoint',
-    'Salario doc',
-  ],
-  tipo_examen: ['N/A', 'Sangre', 'Orina', 'Materia Fecal', 'Piel', 'Anticuerpos rabia'],
-  laboratorio_profesional: [
-    'Microvet',
-    'OSD',
-    'N/A',
-    'Camilo Aldana',
-    'Pet supplet',
-    'Ceba',
-    'Megavet',
-    'Diego Nieto',
-    'Carol contadora',
-    'Andreina odontologia',
-    'Testmol',
-    'Urotest',
-    'Okvet',
-    'Zoodiagnostic',
-    'La Res',
-    'Reacvet',
-    'Dr Ronny',
-    'Uranolab',
-    'Juan Gastro',
-    'Citodermavet',
-  ],
-  pago_tercero: ['Pendiente', 'Ejecutado', 'N/A'],
-  pago_a_valvet: ['Efectivo', 'Transferencia', 'Datafono', 'Pendiente', 'N/A'],
-};
-
 function doGet(e) {
   try {
     var action = e && e.parameter && e.parameter.action;
@@ -111,9 +53,7 @@ function buildMeta_() {
 
   function listFor(headerKey) {
     var col = map[headerKey];
-    var predefined = PREDEFINED[headerKey] || [];
-    var fromSheet = col ? uniqueColumnValues_(sheet, col, MAX_SCAN_ROWS) : [];
-    return mergeLists_(predefined, fromSheet);
+    return col ? uniqueColumnValues_(sheet, col, MAX_SCAN_ROWS) : [];
   }
 
   return {
@@ -161,25 +101,6 @@ function uniqueColumnValues_(sheet, colIndex1Based, maxRows) {
     seen[s] = true;
     out.push(s);
   }
-  out.sort(function (a, b) {
-    return a.localeCompare(b, 'es');
-  });
-  return out;
-}
-
-function mergeLists_(predefined, fromSheet) {
-  var seen = {};
-  var out = [];
-  function add(arr) {
-    for (var i = 0; i < arr.length; i++) {
-      var s = String(arr[i]).trim();
-      if (!s || seen[s]) continue;
-      seen[s] = true;
-      out.push(s);
-    }
-  }
-  add(predefined);
-  add(fromSheet);
   out.sort(function (a, b) {
     return a.localeCompare(b, 'es');
   });
