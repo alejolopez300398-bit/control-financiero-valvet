@@ -121,7 +121,41 @@ function appendRowFromPayload_(data) {
     }
     row.push(record[name] !== undefined && record[name] !== null ? record[name] : '');
   }
-  sheet.appendRow(row);
+  var targetRow = findFirstEmptyRecordRow_(sheet, hm.map);
+  sheet.getRange(targetRow, 1, 1, row.length).setValues([row]);
+}
+
+function findFirstEmptyRecordRow_(sheet, headerMap) {
+  var firstDataRow = 2;
+  var lastRow = Math.max(sheet.getLastRow(), firstDataRow);
+  var checkHeaders = ['fecha', 'concepto'];
+  var checkCols = [];
+
+  for (var i = 0; i < checkHeaders.length; i++) {
+    var col = headerMap[checkHeaders[i]];
+    if (col) checkCols.push(col);
+  }
+
+  if (!checkCols.length) return lastRow + 1;
+
+  var numRows = lastRow - firstDataRow + 1;
+  var ranges = [];
+  for (var c = 0; c < checkCols.length; c++) {
+    ranges.push(sheet.getRange(firstDataRow, checkCols[c], numRows, 1).getValues());
+  }
+
+  for (var r = 0; r < numRows; r++) {
+    var isEmpty = true;
+    for (var k = 0; k < ranges.length; k++) {
+      if (String(ranges[k][r][0] || '').trim()) {
+        isEmpty = false;
+        break;
+      }
+    }
+    if (isEmpty) return firstDataRow + r;
+  }
+
+  return lastRow + 1;
 }
 
 /**
