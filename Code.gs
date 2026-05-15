@@ -8,6 +8,7 @@ var SPREADSHEET_ID = '1dmSLDEMn4V2cWlI-7hhSkjmeQEqtVdtKyDONnO2RuRQ';
 /** Máximo de filas a escanear para valores distintos (costo vs datos en campo). */
 var MAX_SCAN_ROWS = 8000;
 var MAX_STRING_LEN = 5000;
+var NA_VALUE = 'N/A';
 
 function doGet(e) {
   try {
@@ -164,6 +165,7 @@ function findFirstEmptyRecordRow_(sheet, headerMap) {
  */
 function buildRecordFromPayload_(data, headerMap) {
   var out = {};
+  var hidden = hiddenFieldMap_(data.hidden_fields);
   var fechaIso = data.fecha ? sanitizeString_(data.fecha, 32) : '';
   var d = parseIsoDate_(fechaIso);
   if (!d) throw new Error('Fecha inválida');
@@ -179,17 +181,17 @@ function buildRecordFromPayload_(data, headerMap) {
   out.fecha = fechaDisplay;
   out.mes_anio = mesAnio;
   out.concepto = sanitizeString_(data.concepto, MAX_STRING_LEN);
-  out.paciente = sanitizeString_(data.paciente, MAX_STRING_LEN);
-  out.tutor = sanitizeString_(data.tutor, MAX_STRING_LEN);
-  out.tipo_examen = sanitizeString_(data.tipo_examen, MAX_STRING_LEN);
-  out.observacion = sanitizeString_(data.observacion, MAX_STRING_LEN);
-  out.laboratorio_profesional = sanitizeString_(data.laboratorio_profesional, MAX_STRING_LEN);
-  out.pago_tercero = sanitizeString_(data.pago_tercero, MAX_STRING_LEN);
-  out.pago_a_valvet = sanitizeString_(data.pago_a_valvet, MAX_STRING_LEN);
-  out.ingresos = ing;
-  out.salidas = sal;
+  out.paciente = payloadTextValue_(data, hidden, 'paciente');
+  out.tutor = payloadTextValue_(data, hidden, 'tutor');
+  out.tipo_examen = payloadTextValue_(data, hidden, 'tipo_examen');
+  out.observacion = payloadTextValue_(data, hidden, 'observacion');
+  out.laboratorio_profesional = payloadTextValue_(data, hidden, 'laboratorio_profesional');
+  out.pago_tercero = payloadTextValue_(data, hidden, 'pago_tercero');
+  out.pago_a_valvet = payloadTextValue_(data, hidden, 'pago_a_valvet');
+  out.ingresos = hidden.ingresos ? NA_VALUE : ing;
+  out.salidas = hidden.salidas ? NA_VALUE : sal;
   out.balance = bal;
-  out.factura_electronica = sanitizeString_(data.factura_electronica, MAX_STRING_LEN);
+  out.factura_electronica = payloadTextValue_(data, hidden, 'factura_electronica');
 
   var needed = [
     'fecha',
@@ -213,6 +215,21 @@ function buildRecordFromPayload_(data, headerMap) {
     }
   }
   return out;
+}
+
+function hiddenFieldMap_(fields) {
+  var out = {};
+  if (!fields || !fields.length) return out;
+  for (var i = 0; i < fields.length; i++) {
+    var key = String(fields[i] || '').trim();
+    if (key) out[key] = true;
+  }
+  return out;
+}
+
+function payloadTextValue_(data, hidden, fieldName) {
+  if (hidden[fieldName]) return NA_VALUE;
+  return sanitizeString_(data[fieldName], MAX_STRING_LEN);
 }
 
 function sanitizeString_(s, maxLen) {
