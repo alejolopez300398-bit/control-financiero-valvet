@@ -1,43 +1,80 @@
 (function () {
   'use strict';
 
-  /**
-   * Pega aquí la URL del despliegue “Web app” (termina en /exec).
-   * POR QUÉ: la URL no es secreto del todo, pero conviene no versionar la producción en repos públicos sin control de acceso en GAS.
-   */
   var SCRIPT_URL =
     'https://script.google.com/macros/s/AKfycbzdhW-48WMlVQTqvPI6T4yIrwXZtKzgruU0ACYPvC6zNEBtrRAf_wtitFOFncMPPZdPJw/exec';
 
-  var DEBOUNCE_MS = 320;
-  var metaCache = null;
-
-  var el = {
-    form: null,
-    status: null,
-    btn: null,
-    fecha: null,
-    fechaDisplay: null,
-    fechaPicker: null,
-    fechaToggle: null,
-    fechaCalendar: null,
-    fechaGrid: null,
-    fechaMonthLabel: null,
-    fechaPrev: null,
-    fechaNext: null,
-    mesPreview: null,
-    ingresos: null,
-    salidas: null,
-    balance: null,
+  var NA_VALUE = 'N/A';
+  var CONFIG_FIELDS = [
+    'fecha',
+    'paciente',
+    'tutor',
+    'tipo_examen',
+    'observacion',
+    'laboratorio_profesional',
+    'pago_tercero',
+    'pago_a_valvet',
+    'ingresos',
+    'salidas',
+    'factura_electronica',
+  ];
+  var CONCEPT_HIDDEN = {
+    Consulta: ['tipo_examen', 'observacion', 'laboratorio_profesional', 'pago_tercero'],
+    'Toma de examenes': [],
+    Ecografia: ['tipo_examen', 'observacion'],
+    Radiografia: ['tipo_examen', 'observacion'],
+    Interconsulta: ['tipo_examen'],
+    'Control medico': ['tipo_examen', 'observacion', 'laboratorio_profesional', 'pago_tercero'],
+    'Hospitalizacion en casa': ['tipo_examen', 'observacion', 'laboratorio_profesional', 'pago_tercero'],
+    Eutanasia: ['tipo_examen', 'observacion', 'laboratorio_profesional', 'pago_tercero'],
+    Guarderia: ['tipo_examen', 'observacion', 'laboratorio_profesional', 'pago_tercero'],
+    Inyectologia: ['tipo_examen', 'laboratorio_profesional', 'pago_tercero'],
+    'Control vacuna': ['tipo_examen', 'laboratorio_profesional', 'pago_tercero'],
+    'Implantación microchip': ['tipo_examen'],
+    'Certificado nacional': ['tipo_examen'],
+    'Certificado internacional': ['tipo_examen'],
+    Procedimiento: ['tipo_examen'],
+    'Compra insumos': ['paciente', 'tutor', 'tipo_examen', 'ingresos', 'factura_electronica'],
+    'Compra medicamentos': ['paciente', 'tutor', 'tipo_examen', 'ingresos', 'factura_electronica'],
+    'Compra equipos': ['paciente', 'tutor', 'tipo_examen', 'ingresos', 'factura_electronica'],
+    Transporte: ['paciente', 'tutor', 'tipo_examen', 'ingresos', 'factura_electronica'],
+    Viáticos: ['paciente', 'tutor', 'tipo_examen', 'factura_electronica'],
+    'Gastos empresa': ['paciente', 'tutor', 'tipo_examen', 'factura_electronica'],
+    Papelería: ['paciente', 'tutor', 'tipo_examen', 'factura_electronica'],
+    Parafiscales: ['paciente', 'tutor', 'tipo_examen', 'factura_electronica'],
+    'Salario doc': ['paciente', 'tutor', 'tipo_examen', 'factura_electronica'],
+    Turnos: ['paciente', 'tutor', 'tipo_examen', 'factura_electronica'],
+    'Préstamo Valentina': ['paciente', 'tutor', 'tipo_examen', 'factura_electronica'],
+    Faja: ['tipo_examen', 'observacion'],
+    Cytopoint: ['tipo_examen', 'observacion'],
   };
 
-  var calendarState = {
-    viewYear: 0,
-    viewMonth: 0,
-    selectedIso: '',
-  };
+  var hiddenFields = {};
+  var fieldContainers = {};
+  var fieldsets = [];
+  var calendarState = { viewYear: 0, viewMonth: 0, selectedIso: '' };
+  var el = {};
 
   function $(id) {
     return document.getElementById(id);
+  }
+
+  function normalizeText(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  }
+
+  function hideListForConcept(concept) {
+    var normalized = normalizeText(concept);
+    var keys = Object.keys(CONCEPT_HIDDEN);
+    for (var i = 0; i < keys.length; i++) {
+      if (normalizeText(keys[i]) === normalized) return CONCEPT_HIDDEN[keys[i]];
+    }
+    return [];
   }
 
   function showStatus(message, variant) {
@@ -47,9 +84,52 @@
     el.status.dataset.variant = variant || 'info';
   }
 
-  /**
-   * POR QUÉ: un solo GET al inicio evita “picos” de tráfico en datos móviles con debounce solo en CPU local.
-   */
+  function fieldContainer(fieldId) {
+    var node = fieldId === 'fecha' ? el.fechaPicker : $(fieldId);
+    return node && node.closest ? node.closest('.field') : null;
+  }
+
+  function cacheFields() {
+    for (var i = 0; i < CONFIG_FIELDS.length; i++) {
+      fieldContainers[CONFIG_FIELDS[i]] = fieldContainer(CONFIG_FIELDS[i]);
+    }
+    fieldsets = el.form ? Array.prototype.slice.call(el.form.querySelectorAll('.fieldset')) : [];
+  }
+
+  function clearField(fieldId) {
+    if (fieldId === 'fecha') return;
+    var input = $(fieldId);
+    if (input) input.value = '';
+  }
+
+  function isHidden(fieldId) {
+    return !!hiddenFields[fieldId];
+  }
+
+  function updateFieldsets() {
+    for (var i = 0; i < fieldsets.length; i++) {
+      var fields = Array.prototype.slice.call(fieldsets[i].querySelectorAll('.field'));
+      fieldsets[i].hidden = !fields.some(function (field) {
+        return !field.hidden;
+      });
+    }
+  }
+
+  function applyConceptRules() {
+    var hidden = hideListForConcept($('concepto') ? $('concepto').value : '');
+    hiddenFields = {};
+    for (var i = 0; i < hidden.length; i++) hiddenFields[hidden[i]] = true;
+
+    for (var j = 0; j < CONFIG_FIELDS.length; j++) {
+      var fieldId = CONFIG_FIELDS[j];
+      var shouldHide = isHidden(fieldId);
+      if (fieldContainers[fieldId]) fieldContainers[fieldId].hidden = shouldHide;
+      if (shouldHide) clearField(fieldId);
+    }
+    updateBalancePreview();
+    updateFieldsets();
+  }
+
   function fetchMeta() {
     if (!SCRIPT_URL || !SCRIPT_URL.trim()) {
       showStatus('Configura SCRIPT_URL en app.js para cargar listas y guardar.', 'info');
@@ -64,8 +144,13 @@
       })
       .then(function (data) {
         if (!data.ok) throw new Error(data.error || 'Meta inválida');
-        metaCache = data;
-        applyMetaToDatalists(data);
+        fillDatalist('list-concepto', data.concepto);
+        fillDatalist('list-tipo_examen', data.tipo_examen);
+        fillDatalist('list-laboratorio_profesional', data.laboratorio_profesional);
+        fillDatalist('list-pago_tercero', data.pago_tercero);
+        fillDatalist('list-pago_a_valvet', data.pago_a_valvet);
+        fillDatalist('list-paciente', data.pacientes);
+        fillDatalist('list-tutor', data.tutores);
         showStatus('Listas cargadas desde la hoja.', 'success');
         return data;
       })
@@ -76,47 +161,26 @@
       });
   }
 
-  function clearDatalist(id) {
+  function fillDatalist(id, values) {
     var dl = $(id);
     if (!dl) return;
-    while (dl.firstChild) dl.removeChild(dl.firstChild);
-  }
-
-  function fillDatalist(id, values) {
-    clearDatalist(id);
-    var dl = $(id);
-    if (!dl || !values) return;
+    dl.textContent = '';
     var frag = document.createDocumentFragment();
-    for (var i = 0; i < values.length; i++) {
+    (values || []).forEach(function (value) {
       var opt = document.createElement('option');
-      opt.value = values[i];
+      opt.value = value;
       frag.appendChild(opt);
-    }
+    });
     dl.appendChild(frag);
   }
 
-  function applyMetaToDatalists(data) {
-    fillDatalist('list-concepto', data.concepto);
-    fillDatalist('list-tipo_examen', data.tipo_examen);
-    fillDatalist('list-laboratorio_profesional', data.laboratorio_profesional);
-    fillDatalist('list-pago_tercero', data.pago_tercero);
-    fillDatalist('list-pago_a_valvet', data.pago_a_valvet);
-    fillDatalist('list-paciente', data.pacientes);
-    fillDatalist('list-tutor', data.tutores);
-  }
-
-  /** Solo dígitos → entero (pesos COP sin decimales en MVP). */
   function parseDigitsToInt(str) {
     if (!str || typeof str !== 'string') return 0;
-    var d = str.replace(/\D/g, '');
-    if (!d) return 0;
-    var n = parseInt(d, 10);
+    var digits = str.replace(/\D/g, '');
+    var n = parseInt(digits, 10);
     return isNaN(n) ? 0 : n;
   }
 
-  /**
-   * POR QUÉ: el usuario escribe cifras; el formato con puntos es presentación, no otra capa de datos.
-   */
   function formatCopMaskFromDigits(digitStr) {
     var n = parseDigitsToInt(digitStr);
     if (n === 0 && (!digitStr || !/\d/.test(digitStr))) return '';
@@ -126,52 +190,33 @@
   function wireMoneyInput(input) {
     if (!input) return;
     input.addEventListener('input', function () {
-      var raw = input.value;
-      var digits = raw.replace(/\D/g, '');
-      var masked = formatCopMaskFromDigits(digits);
-      input.value = masked;
+      input.value = formatCopMaskFromDigits(input.value.replace(/\D/g, ''));
       updateBalancePreview();
     });
-    input.addEventListener('blur', function () {
-      if (!input.value.trim()) input.value = '';
-      updateBalancePreview();
-    });
+    input.addEventListener('blur', updateBalancePreview);
   }
 
   function getMoneyNumber(input) {
+    if (input && isHidden(input.id)) return 0;
     return parseDigitsToInt(input ? input.value : '');
   }
 
   function formatBalanceDisplay(num) {
     var n = Math.round(Number(num));
     if (isNaN(n)) n = 0;
-    var neg = n < 0;
-    var abs = Math.abs(n);
-    var s = abs.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-    return neg ? '-' + s : s;
+    var sign = n < 0 ? '-' : '';
+    return sign + Math.abs(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   }
 
   function updateBalancePreview() {
     if (!el.balance) return;
-    var ing = getMoneyNumber(el.ingresos);
-    var sal = getMoneyNumber(el.salidas);
-    el.balance.textContent = formatBalanceDisplay(ing - sal);
+    el.balance.textContent = formatBalanceDisplay(getMoneyNumber(el.ingresos) - getMoneyNumber(el.salidas));
   }
 
-  /** Vista previa local; el valor oficial de mes_anio lo calcula GAS al guardar. */
   function updateMesAnioPreview() {
     if (!el.fecha || !el.mesPreview) return;
-    var v = el.fecha.value;
-    if (!v) {
-      el.mesPreview.textContent = '—';
-      return;
-    }
-    var p = v.split('-');
-    if (p.length !== 3) {
-      el.mesPreview.textContent = '—';
-      return;
-    }
-    el.mesPreview.textContent = p[1] + '/' + p[0];
+    var parts = (el.fecha.value || '').split('-');
+    el.mesPreview.textContent = parts.length === 3 ? parts[1] + '/' + parts[0] : '—';
   }
 
   function parseIsoDateParts(iso) {
@@ -180,38 +225,27 @@
     var year = parseInt(p[0], 10);
     var month = parseInt(p[1], 10);
     var day = parseInt(p[2], 10);
-    var dt = new Date(year, month - 1, day);
-    if (dt.getFullYear() !== year || dt.getMonth() !== month - 1 || dt.getDate() !== day) return null;
-    return { year: year, month: month, day: day, date: dt };
+    var date = new Date(year, month - 1, day);
+    if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+    return { year: year, month: month, day: day, date: date };
   }
 
   function formatIsoDate(year, monthIndex, day) {
-    var mm = String(monthIndex + 1).padStart(2, '0');
-    var dd = String(day).padStart(2, '0');
-    return String(year) + '-' + mm + '-' + dd;
+    return String(year) + '-' + String(monthIndex + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
   }
 
   function formatDateDisplay(iso) {
     var parsed = parseIsoDateParts(iso);
     if (!parsed) return '';
-    return new Intl.DateTimeFormat('es-CO', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-    }).format(parsed.date);
+    return new Intl.DateTimeFormat('es-CO', { day: '2-digit', month: 'long', year: 'numeric' }).format(parsed.date);
   }
 
   function setSelectedDate(iso) {
     calendarState.selectedIso = iso || '';
     if (el.fecha) el.fecha.value = iso || '';
     if (el.fechaDisplay) el.fechaDisplay.value = formatDateDisplay(iso);
-    if (el.fechaDisplay) el.fechaDisplay.setAttribute('aria-invalid', iso ? 'false' : 'true');
     updateMesAnioPreview();
     renderCalendar();
-  }
-
-  function clearSelectedDate() {
-    setSelectedDate('');
   }
 
   function syncCalendarViewFromSelected() {
@@ -236,41 +270,18 @@
     if (el.fechaDisplay) el.fechaDisplay.setAttribute('aria-expanded', 'false');
   }
 
-  function toggleCalendar() {
-    if (!el.fechaCalendar) return;
-    if (el.fechaCalendar.hidden) {
-      openCalendar();
-    } else {
-      closeCalendar();
-    }
-  }
-
-  function isSameDay(a, b) {
-    return (
-      a.getFullYear() === b.getFullYear() &&
-      a.getMonth() === b.getMonth() &&
-      a.getDate() === b.getDate()
-    );
-  }
-
   function renderCalendar() {
     if (!el.fechaGrid || !el.fechaMonthLabel) return;
-
     var monthDate = new Date(calendarState.viewYear, calendarState.viewMonth, 1);
-    el.fechaMonthLabel.textContent = new Intl.DateTimeFormat('es-CO', {
-      month: 'long',
-      year: 'numeric',
-    }).format(monthDate);
-
-    el.fechaGrid.textContent = '';
-
     var firstDayIndex = (monthDate.getDay() + 6) % 7;
     var daysInMonth = new Date(calendarState.viewYear, calendarState.viewMonth + 1, 0).getDate();
     var prevMonthDays = new Date(calendarState.viewYear, calendarState.viewMonth, 0).getDate();
     var totalCells = Math.ceil((firstDayIndex + daysInMonth) / 7) * 7;
     var selected = parseIsoDateParts(calendarState.selectedIso);
-    var selectedDate = selected ? selected.date : null;
     var today = new Date();
+
+    el.fechaMonthLabel.textContent = new Intl.DateTimeFormat('es-CO', { month: 'long', year: 'numeric' }).format(monthDate);
+    el.fechaGrid.textContent = '';
 
     for (var i = 0; i < totalCells; i++) {
       var dayNumber = i - firstDayIndex + 1;
@@ -279,19 +290,19 @@
       var inCurrentMonth = true;
 
       if (dayNumber < 1) {
-        cellMonth -= 1;
+        cellMonth--;
         if (cellMonth < 0) {
           cellMonth = 11;
-          cellYear -= 1;
+          cellYear--;
         }
         dayNumber = prevMonthDays + dayNumber;
         inCurrentMonth = false;
       } else if (dayNumber > daysInMonth) {
         dayNumber -= daysInMonth;
-        cellMonth += 1;
+        cellMonth++;
         if (cellMonth > 11) {
           cellMonth = 0;
-          cellYear += 1;
+          cellYear++;
         }
         inCurrentMonth = false;
       }
@@ -301,36 +312,29 @@
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'date-day' + (inCurrentMonth ? '' : ' date-day-other');
-      if (isSameDay(cellDate, today)) btn.className += ' date-day-today';
-      if (selectedDate && isSameDay(cellDate, selectedDate)) btn.className += ' date-day-selected';
+      if (sameDay(cellDate, today)) btn.className += ' date-day-today';
+      if (selected && sameDay(cellDate, selected.date)) btn.className += ' date-day-selected';
       btn.textContent = String(dayNumber);
       btn.dataset.iso = iso;
       btn.setAttribute('role', 'gridcell');
-      btn.setAttribute(
-        'aria-label',
-        new Intl.DateTimeFormat('es-CO', {
-          weekday: 'long',
-          day: 'numeric',
-          month: 'long',
-          year: 'numeric',
-        }).format(cellDate)
-      );
       btn.addEventListener('click', function (ev) {
-        var nextIso = ev.currentTarget.dataset.iso;
-        var parsed = parseIsoDateParts(nextIso);
+        var parsed = parseIsoDateParts(ev.currentTarget.dataset.iso);
         if (!parsed) return;
         calendarState.viewYear = parsed.year;
         calendarState.viewMonth = parsed.month - 1;
-        setSelectedDate(nextIso);
+        setSelectedDate(ev.currentTarget.dataset.iso);
         closeCalendar();
       });
       el.fechaGrid.appendChild(btn);
     }
   }
 
+  function sameDay(a, b) {
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  }
+
   function wireDatePicker() {
     if (!el.fecha || !el.fechaDisplay || !el.fechaPicker) return;
-
     var initial = parseIsoDateParts(el.fecha.value);
     if (initial) {
       calendarState.selectedIso = el.fecha.value;
@@ -339,7 +343,6 @@
       el.fechaDisplay.value = formatDateDisplay(el.fecha.value);
     } else {
       syncCalendarViewFromSelected();
-      el.fechaDisplay.value = '';
     }
 
     el.fechaDisplay.addEventListener('click', openCalendar);
@@ -349,55 +352,61 @@
         openCalendar();
       }
     });
-
-    if (el.fechaToggle) el.fechaToggle.addEventListener('click', toggleCalendar);
-    if (el.fechaPrev) {
-      el.fechaPrev.addEventListener('click', function () {
-        calendarState.viewMonth -= 1;
-        if (calendarState.viewMonth < 0) {
-          calendarState.viewMonth = 11;
-          calendarState.viewYear -= 1;
-        }
-        renderCalendar();
-      });
-    }
-    if (el.fechaNext) {
-      el.fechaNext.addEventListener('click', function () {
-        calendarState.viewMonth += 1;
-        if (calendarState.viewMonth > 11) {
-          calendarState.viewMonth = 0;
-          calendarState.viewYear += 1;
-        }
-        renderCalendar();
-      });
-    }
-
+    if (el.fechaToggle) el.fechaToggle.addEventListener('click', function () {
+      if (el.fechaCalendar.hidden) openCalendar();
+      else closeCalendar();
+    });
+    if (el.fechaPrev) el.fechaPrev.addEventListener('click', function () {
+      calendarState.viewMonth--;
+      if (calendarState.viewMonth < 0) {
+        calendarState.viewMonth = 11;
+        calendarState.viewYear--;
+      }
+      renderCalendar();
+    });
+    if (el.fechaNext) el.fechaNext.addEventListener('click', function () {
+      calendarState.viewMonth++;
+      if (calendarState.viewMonth > 11) {
+        calendarState.viewMonth = 0;
+        calendarState.viewYear++;
+      }
+      renderCalendar();
+    });
     document.addEventListener('click', function (ev) {
       if (!el.fechaPicker.contains(ev.target)) closeCalendar();
     });
-
     document.addEventListener('keydown', function (ev) {
       if (ev.key === 'Escape') closeCalendar();
     });
-
     renderCalendar();
     updateMesAnioPreview();
+  }
+
+  function textValue(fieldId) {
+    if (isHidden(fieldId)) return NA_VALUE;
+    var input = $(fieldId);
+    return input ? input.value.trim() : '';
+  }
+
+  function moneyValue(fieldId, input) {
+    return isHidden(fieldId) ? NA_VALUE : getMoneyNumber(input);
   }
 
   function buildPayload() {
     return {
       fecha: el.fecha ? el.fecha.value : '',
       concepto: $('concepto').value.trim(),
-      paciente: $('paciente').value.trim(),
-      tutor: $('tutor').value.trim(),
-      tipo_examen: $('tipo_examen').value.trim(),
-      observacion: $('observacion').value.trim(),
-      laboratorio_profesional: $('laboratorio_profesional').value.trim(),
-      pago_tercero: $('pago_tercero').value.trim(),
-      pago_a_valvet: $('pago_a_valvet').value.trim(),
-      ingresos: getMoneyNumber(el.ingresos),
-      salidas: getMoneyNumber(el.salidas),
-      factura_electronica: $('factura_electronica').value.trim(),
+      paciente: textValue('paciente'),
+      tutor: textValue('tutor'),
+      tipo_examen: textValue('tipo_examen'),
+      observacion: textValue('observacion'),
+      laboratorio_profesional: textValue('laboratorio_profesional'),
+      pago_tercero: textValue('pago_tercero'),
+      pago_a_valvet: textValue('pago_a_valvet'),
+      ingresos: moneyValue('ingresos', el.ingresos),
+      salidas: moneyValue('salidas', el.salidas),
+      factura_electronica: textValue('factura_electronica'),
+      hidden_fields: CONFIG_FIELDS.filter(isHidden),
     };
   }
 
@@ -432,14 +441,14 @@
         if (r.body && r.body.ok) {
           showStatus('Registro guardado en la hoja.', 'success');
           el.form.reset();
-          clearSelectedDate();
+          setSelectedDate('');
           if (el.balance) el.balance.textContent = '0';
           syncCalendarViewFromSelected();
           renderCalendar();
+          applyConceptRules();
           return fetchMeta();
         }
-        var msg = (r.body && r.body.error) || 'Error al guardar';
-        throw new Error(msg);
+        throw new Error((r.body && r.body.error) || 'Error al guardar');
       })
       .catch(function (err) {
         console.error(err);
@@ -448,18 +457,6 @@
       .then(function () {
         el.btn.disabled = false;
       });
-  }
-
-  function debounce(fn, ms) {
-    var t;
-    return function () {
-      var ctx = this;
-      var args = arguments;
-      clearTimeout(t);
-      t = setTimeout(function () {
-        fn.apply(ctx, args);
-      }, ms);
-    };
   }
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -483,11 +480,15 @@
     wireMoneyInput(el.ingresos);
     wireMoneyInput(el.salidas);
     updateBalancePreview();
-
     wireDatePicker();
+    cacheFields();
 
     if (el.form) el.form.addEventListener('submit', submitForm);
-
+    if ($('concepto')) {
+      $('concepto').addEventListener('input', applyConceptRules);
+      $('concepto').addEventListener('change', applyConceptRules);
+    }
+    applyConceptRules();
     fetchMeta();
   });
 })();
