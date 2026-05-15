@@ -6,7 +6,7 @@
    * POR QUÉ: la URL no es secreto del todo, pero conviene no versionar la producción en repos públicos sin control de acceso en GAS.
    */
   var SCRIPT_URL =
-    'https://script.google.com/macros/s/AKfycbztu6T1TZFVi00rfgdQNQRPSVz5Nmg7YRFD0ka5cbnqVapdjJbC5cdndHFx4CYaIAPo/exec';
+    'https://script.google.com/macros/s/AKfycbzdhW-48WMlVQTqvPI6T4yIrwXZtKzgruU0ACYPvC6zNEBtrRAf_wtitFOFncMPPZdPJw/exec';
 
   var DEBOUNCE_MS = 320;
   var metaCache = null;
