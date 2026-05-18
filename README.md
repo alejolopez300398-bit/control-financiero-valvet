@@ -12,3 +12,4 @@ Aplicacion estatica para registrar movimientos operativos de Valvet y enviarlos 
 3. Despliega.
 
 La URL del Web App de Google Apps Script se configura en `app.js` mediante `SCRIPT_URL`.
+

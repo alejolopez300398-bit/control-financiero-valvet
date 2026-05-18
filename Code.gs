@@ -7,6 +7,7 @@
 var SPREADSHEET_ID = '1dmSLDEMn4V2cWlI-7hhSkjmeQEqtVdtKyDONnO2RuRQ';
 /** Máximo de filas a escanear para valores distintos (costo vs datos en campo). */
 var MAX_SCAN_ROWS = 8000;
+var MAX_TABLE_ROWS = 8000;
 var MAX_STRING_LEN = 5000;
 var NA_VALUE = 'N/A';
 
@@ -15,6 +16,9 @@ function doGet(e) {
     var action = e && e.parameter && e.parameter.action;
     if (action === 'meta') {
       return jsonResponse_(buildMeta_());
+    }
+    if (action === 'records') {
+      return jsonResponse_(buildRecords_());
     }
     return jsonResponse_({ ok: true, message: 'Valvet GAS activo', action: action || null });
   } catch (err) {
@@ -28,6 +32,10 @@ function doPost(e) {
       return jsonResponse_({ ok: false, error: 'Cuerpo vacío' });
     }
     var data = JSON.parse(e.postData.contents);
+    if (data && data.action === 'updateCell') {
+      updateCellFromPayload_(data);
+      return jsonResponse_({ ok: true });
+    }
     appendRowFromPayload_(data);
     return jsonResponse_({ ok: true });
   } catch (err) {
@@ -67,6 +75,77 @@ function buildMeta_() {
     pacientes: listFor('paciente'),
     tutores: listFor('tutor'),
   };
+}
+
+function buildRecords_() {
+  var sheet = getTargetSheet_();
+  var hm = readHeaderMap_(sheet);
+  var headers = sheet.getRange(1, 1, 1, hm.colCount).getDisplayValues()[0];
+  var visibleCols = visibleRecordColumnIndexes_(headers);
+  var visibleHeaders = projectRowValues_(cleanHeaders_(headers), visibleCols);
+  var fechaCol = hm.map.fecha;
+  if (!fechaCol) throw new Error('Falta cabecera en la hoja: fecha');
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return {
+      ok: true,
+      headers: visibleHeaders,
+      rows: [],
+      totalRows: 0,
+      returnedRows: 0,
+      maxRows: MAX_TABLE_ROWS,
+    };
+  }
+
+  var firstDataRow = Math.max(2, lastRow - MAX_TABLE_ROWS + 1);
+  var numRows = lastRow - firstDataRow + 1;
+  var values = sheet.getRange(firstDataRow, 1, numRows, hm.colCount).getDisplayValues();
+  var rows = [];
+
+  for (var r = 0; r < values.length; r++) {
+    if (!String(values[r][fechaCol - 1] || '').trim()) continue;
+    rows.push({
+      sheetRow: firstDataRow + r,
+      values: projectRowValues_(values[r], visibleCols),
+    });
+  }
+
+  return {
+    ok: true,
+    headers: visibleHeaders,
+    rows: rows,
+    totalRows: rows.length,
+    returnedRows: rows.length,
+    maxRows: MAX_TABLE_ROWS,
+  };
+}
+
+function visibleRecordColumnIndexes_(headers) {
+  var cols = [];
+  for (var i = 0; i < headers.length; i++) {
+    if (!String(headers[i] || '').trim()) continue;
+    if (isHiddenRecordHeader_(headers[i])) continue;
+    cols.push(i);
+  }
+  return cols;
+}
+
+function projectRowValues_(row, colIndexes) {
+  var out = [];
+  for (var i = 0; i < colIndexes.length; i++) {
+    out.push(row[colIndexes[i]]);
+  }
+  return out;
+}
+
+function cleanHeaders_(headers) {
+  var out = [];
+  for (var i = 0; i < headers.length; i++) {
+    var label = String(headers[i] || '').trim();
+    out.push(label || 'Columna ' + (i + 1));
+  }
+  return out;
 }
 
 function getTargetSheet_() {
@@ -128,6 +207,74 @@ function appendRowFromPayload_(data) {
   clearRowValidationsForNewText_(sheet, targetRow, hm.map, freeTextFields);
   sheet.getRange(targetRow, 1, 1, row.length).setValues([row]);
   setBalanceFormula_(sheet, targetRow, hm.map);
+}
+
+function updateCellFromPayload_(data) {
+  var sheet = getTargetSheet_();
+  var hm = readHeaderMap_(sheet);
+  var rowIndex = parseInt(data.row, 10);
+  var fieldName = sanitizeString_(data.field, 160);
+  var value = sanitizeString_(data.value, MAX_STRING_LEN);
+
+  if (!rowIndex || rowIndex < 2 || rowIndex > sheet.getMaxRows()) {
+    throw new Error('Fila inválida');
+  }
+  if (!fieldName || !hm.map[fieldName]) {
+    throw new Error('Cabecera inválida: ' + fieldName);
+  }
+  if (isHiddenRecordHeader_(fieldName)) {
+    throw new Error('La columna no es editable: ' + fieldName);
+  }
+
+  var colIndex = hm.map[fieldName];
+  if (fieldName === 'fecha') {
+    setFechaAndMesAnio_(sheet, rowIndex, hm.map, value);
+  } else {
+    sheet.getRange(rowIndex, colIndex).setValue(value);
+  }
+
+  if (fieldName === 'ingresos' || fieldName === 'salidas') {
+    setBalanceFormula_(sheet, rowIndex, hm.map);
+  }
+}
+
+function setFechaAndMesAnio_(sheet, rowIndex, headerMap, value) {
+  var fechaCol = headerMap.fecha;
+  var mesAnioCol = headerMap.mes_anio;
+  if (!fechaCol) throw new Error('Falta cabecera en la hoja: fecha');
+
+  var d = parseFlexibleDate_(value);
+  if (!d) throw new Error('Fecha inválida');
+
+  var tz = Session.getScriptTimeZone();
+  sheet.getRange(rowIndex, fechaCol).setValue(Utilities.formatDate(d, tz, 'dd/MM/yyyy'));
+  if (mesAnioCol) {
+    sheet.getRange(rowIndex, mesAnioCol).setValue(Utilities.formatDate(d, tz, 'MM/yyyy'));
+  }
+}
+
+function parseFlexibleDate_(value) {
+  var s = String(value || '').trim();
+  var iso = parseIsoDate_(s);
+  if (iso) return iso;
+
+  var m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+
+  var day = parseInt(m[1], 10);
+  var month = parseInt(m[2], 10);
+  var year = parseInt(m[3], 10);
+  var dt = new Date(year, month - 1, day);
+  if (dt.getFullYear() !== year || dt.getMonth() !== month - 1 || dt.getDate() !== day) return null;
+  return dt;
+}
+
+function isHiddenRecordHeader_(header) {
+  var hidden = {
+    'verificacion balance': true,
+    balance_ok: true,
+  };
+  return !!hidden[normalizeText_(header)];
 }
 
 function resolveKnownColumnValues_(sheet, headerMap, record, fieldNames) {
