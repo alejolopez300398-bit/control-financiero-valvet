@@ -153,8 +153,11 @@
       <fieldset class="fieldset">
         <legend class="fieldset-legend">Facturación</legend>
         <div class="field">
-          <label class="label" for="factura_electronica">Factura electrónica</label>
-          <input class="input" type="text" id="factura_electronica" name="factura_electronica" inputmode="text" autocomplete="off" placeholder="Referencia o número" />
+          <label class="check-control" for="factura_electronica">
+            <input class="input-check" type="checkbox" id="factura_electronica" name="factura_electronica" value="Si" />
+            <span class="check-box" aria-hidden="true"></span>
+            <span class="check-label">Factura electrónica</span>
+          </label>
         </div>
       </fieldset>
 

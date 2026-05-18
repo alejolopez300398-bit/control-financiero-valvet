@@ -1,11 +1,18 @@
 (function () {
   'use strict';
 
+  /**
+   * Pega aquí la URL del despliegue “Web app” (termina en /exec).
+   * POR QUÉ: la URL no es secreto del todo, pero conviene no versionar la producción en repos públicos sin control de acceso en GAS.
+   */
   var SCRIPT_URL =
     'https://script.google.com/macros/s/AKfycbzdhW-48WMlVQTqvPI6T4yIrwXZtKzgruU0ACYPvC6zNEBtrRAf_wtitFOFncMPPZdPJw/exec';
 
+  var DEBOUNCE_MS = 320;
+  var metaCache = null;
   var NA_VALUE = 'N/A';
-  var CONFIG_FIELDS = [
+  var SALARIO_DOC_PROFESIONAL = 'Valentina Triviño';
+  var ALL_CONFIGURABLE_FIELDS = [
     'fecha',
     'paciente',
     'tutor',
@@ -18,48 +25,286 @@
     'salidas',
     'factura_electronica',
   ];
-  var CONCEPT_HIDDEN = {
-    Consulta: ['tipo_examen', 'observacion', 'laboratorio_profesional', 'pago_tercero'],
-    'Toma de examenes': [],
-    Ecografia: ['tipo_examen', 'observacion'],
-    Radiografia: ['tipo_examen', 'observacion'],
-    Interconsulta: ['tipo_examen'],
-    'Control medico': ['tipo_examen', 'observacion', 'laboratorio_profesional', 'pago_tercero'],
-    'Hospitalizacion en casa': ['tipo_examen', 'observacion', 'laboratorio_profesional', 'pago_tercero'],
-    Eutanasia: ['tipo_examen', 'observacion', 'laboratorio_profesional', 'pago_tercero'],
-    Guarderia: ['tipo_examen', 'observacion', 'laboratorio_profesional', 'pago_tercero'],
-    Inyectologia: ['tipo_examen', 'laboratorio_profesional', 'pago_tercero'],
-    'Control vacuna': ['tipo_examen', 'laboratorio_profesional', 'pago_tercero'],
-    'Implantación microchip': ['tipo_examen'],
-    'Certificado nacional': ['tipo_examen'],
-    'Certificado internacional': ['tipo_examen'],
-    Procedimiento: ['tipo_examen'],
-    'Compra insumos': ['paciente', 'tutor', 'tipo_examen', 'ingresos', 'factura_electronica'],
-    'Compra medicamentos': ['paciente', 'tutor', 'tipo_examen', 'ingresos', 'factura_electronica'],
-    'Compra equipos': ['paciente', 'tutor', 'tipo_examen', 'ingresos', 'factura_electronica'],
-    Transporte: ['paciente', 'tutor', 'tipo_examen', 'ingresos', 'factura_electronica'],
-    Viáticos: ['paciente', 'tutor', 'tipo_examen', 'factura_electronica'],
-    'Gastos empresa': ['paciente', 'tutor', 'tipo_examen', 'factura_electronica'],
-    Papelería: ['paciente', 'tutor', 'tipo_examen', 'factura_electronica'],
-    Parafiscales: ['paciente', 'tutor', 'tipo_examen', 'factura_electronica'],
-    'Salario doc': ['paciente', 'tutor', 'tipo_examen', 'factura_electronica'],
-    Turnos: ['paciente', 'tutor', 'tipo_examen', 'factura_electronica'],
-    'Préstamo Valentina': ['paciente', 'tutor', 'tipo_examen', 'factura_electronica'],
-    Faja: ['tipo_examen', 'observacion'],
-    Cytopoint: ['tipo_examen', 'observacion'],
+  var ALWAYS_VISIBLE_FIELDS = ['concepto', 'mes_anio', 'balance', 'factura_electronica'];
+  var DEFAULT_VISIBLE_FIELDS = ALL_CONFIGURABLE_FIELDS.concat(ALWAYS_VISIBLE_FIELDS);
+  var CONCEPT_VISIBLE_FIELDS = {
+    Consulta: ['fecha', 'paciente', 'tutor', 'pago_a_valvet', 'ingresos', 'salidas', 'factura_electronica'],
+    'Toma de examenes': [
+      'fecha',
+      'paciente',
+      'tutor',
+      'tipo_examen',
+      'laboratorio_profesional',
+      'observacion',
+      'pago_tercero',
+      'pago_a_valvet',
+      'ingresos',
+      'salidas',
+      'factura_electronica',
+    ],
+    Ecografia: [
+      'fecha',
+      'paciente',
+      'tutor',
+      'laboratorio_profesional',
+      'pago_tercero',
+      'pago_a_valvet',
+      'ingresos',
+      'salidas',
+      'factura_electronica',
+    ],
+    Radiografia: [
+      'fecha',
+      'paciente',
+      'tutor',
+      'laboratorio_profesional',
+      'pago_tercero',
+      'pago_a_valvet',
+      'ingresos',
+      'salidas',
+      'factura_electronica',
+    ],
+    Interconsulta: [
+      'fecha',
+      'paciente',
+      'tutor',
+      'laboratorio_profesional',
+      'observacion',
+      'pago_tercero',
+      'pago_a_valvet',
+      'ingresos',
+      'salidas',
+      'factura_electronica',
+    ],
+    'Control medico': ['fecha', 'paciente', 'tutor', 'pago_a_valvet', 'ingresos', 'salidas', 'factura_electronica'],
+    'Hospitalizacion en casa': [
+      'fecha',
+      'paciente',
+      'tutor',
+      'pago_a_valvet',
+      'ingresos',
+      'salidas',
+      'factura_electronica',
+    ],
+    Eutanasia: ['fecha', 'paciente', 'tutor', 'pago_a_valvet', 'ingresos', 'salidas', 'factura_electronica'],
+    Guarderia: ['fecha', 'paciente', 'tutor', 'pago_a_valvet', 'ingresos', 'salidas', 'factura_electronica'],
+    Inyectologia: [
+      'fecha',
+      'paciente',
+      'tutor',
+      'observacion',
+      'pago_a_valvet',
+      'ingresos',
+      'salidas',
+      'factura_electronica',
+    ],
+    'Control vacuna': [
+      'fecha',
+      'paciente',
+      'tutor',
+      'observacion',
+      'pago_a_valvet',
+      'ingresos',
+      'salidas',
+      'factura_electronica',
+    ],
+    'Implantación microchip': [
+      'fecha',
+      'paciente',
+      'tutor',
+      'observacion',
+      'laboratorio_profesional',
+      'pago_tercero',
+      'pago_a_valvet',
+      'ingresos',
+      'salidas',
+      'factura_electronica',
+    ],
+    'Certificado nacional': [
+      'fecha',
+      'paciente',
+      'tutor',
+      'observacion',
+      'laboratorio_profesional',
+      'pago_tercero',
+      'pago_a_valvet',
+      'ingresos',
+      'salidas',
+      'factura_electronica',
+    ],
+    'Certificado internacional': [
+      'fecha',
+      'paciente',
+      'tutor',
+      'observacion',
+      'laboratorio_profesional',
+      'pago_tercero',
+      'pago_a_valvet',
+      'ingresos',
+      'salidas',
+      'factura_electronica',
+    ],
+    Procedimiento: [
+      'fecha',
+      'paciente',
+      'tutor',
+      'observacion',
+      'laboratorio_profesional',
+      'pago_tercero',
+      'pago_a_valvet',
+      'ingresos',
+      'salidas',
+      'factura_electronica',
+    ],
+    'Compra insumos': [
+      'fecha',
+      'observacion',
+      'laboratorio_profesional',
+      'pago_tercero',
+      'pago_a_valvet',
+      'salidas',
+    ],
+    'Compra medicamentos': [
+      'fecha',
+      'observacion',
+      'laboratorio_profesional',
+      'pago_tercero',
+      'pago_a_valvet',
+      'salidas',
+    ],
+    'Compra equipos': [
+      'fecha',
+      'observacion',
+      'laboratorio_profesional',
+      'pago_tercero',
+      'pago_a_valvet',
+      'salidas',
+    ],
+    Transporte: [
+      'fecha',
+      'pago_tercero',
+      'salidas',
+    ],
+    Viáticos: [
+      'fecha',
+      'observacion',
+      'laboratorio_profesional',
+      'pago_a_valvet',
+      'salidas',
+      'pago_tercero',
+      'ingresos',
+    ],
+    'Gastos empresa': [
+      'fecha',
+      'observacion',
+      'laboratorio_profesional',
+      'pago_a_valvet',
+      'salidas',
+      'pago_tercero',
+      'ingresos',
+    ],
+    Papelería: [
+      'fecha',
+      'observacion',
+      'laboratorio_profesional',
+      'pago_a_valvet',
+      'salidas',
+      'pago_tercero',
+      'ingresos',
+    ],
+    Parafiscales: [
+      'fecha',
+      'observacion',
+      'laboratorio_profesional',
+      'pago_a_valvet',
+      'salidas',
+      'pago_tercero',
+      'ingresos',
+    ],
+    'Salario doc': [
+      'fecha',
+      'laboratorio_profesional',
+      'salidas',
+      'pago_tercero',
+      'ingresos',
+    ],
+    Turnos: [
+      'fecha',
+      'observacion',
+      'laboratorio_profesional',
+      'pago_a_valvet',
+      'salidas',
+      'pago_tercero',
+      'ingresos',
+    ],
+    'Préstamo Valentina': [
+      'fecha',
+      'observacion',
+      'laboratorio_profesional',
+      'pago_a_valvet',
+      'salidas',
+      'pago_tercero',
+      'ingresos',
+    ],
+    Faja: [
+      'fecha',
+      'paciente',
+      'tutor',
+      'laboratorio_profesional',
+      'pago_tercero',
+      'pago_a_valvet',
+      'ingresos',
+      'salidas',
+      'factura_electronica',
+    ],
+    Cytopoint: [
+      'fecha',
+      'paciente',
+      'tutor',
+      'laboratorio_profesional',
+      'pago_tercero',
+      'pago_a_valvet',
+      'ingresos',
+      'salidas',
+      'factura_electronica',
+    ],
+  };
+  var fieldState = {
+    hidden: {},
   };
 
-  var hiddenFields = {};
-  var fieldContainers = {};
-  var fieldsets = [];
-  var calendarState = { viewYear: 0, viewMonth: 0, selectedIso: '' };
-  var el = {};
+  var el = {
+    form: null,
+    status: null,
+    btn: null,
+    fecha: null,
+    fechaDisplay: null,
+    fechaPicker: null,
+    fechaToggle: null,
+    fechaCalendar: null,
+    fechaGrid: null,
+    fechaMonthLabel: null,
+    fechaPrev: null,
+    fechaNext: null,
+    mesPreview: null,
+    ingresos: null,
+    salidas: null,
+    balance: null,
+    fields: {},
+    fieldsets: [],
+  };
+
+  var calendarState = {
+    viewYear: 0,
+    viewMonth: 0,
+    selectedIso: '',
+  };
 
   function $(id) {
     return document.getElementById(id);
   }
 
-  function normalizeText(value) {
+  function normalizeConcept(value) {
     return String(value || '')
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
@@ -68,13 +313,100 @@
       .toLowerCase();
   }
 
-  function hideListForConcept(concept) {
-    var normalized = normalizeText(concept);
-    var keys = Object.keys(CONCEPT_HIDDEN);
+  function getConceptVisibleFields(concept) {
+    var normalized = normalizeConcept(concept);
+    var keys = Object.keys(CONCEPT_VISIBLE_FIELDS);
     for (var i = 0; i < keys.length; i++) {
-      if (normalizeText(keys[i]) === normalized) return CONCEPT_HIDDEN[keys[i]];
+      if (normalizeConcept(keys[i]) === normalized) {
+        return CONCEPT_VISIBLE_FIELDS[keys[i]].concat(ALWAYS_VISIBLE_FIELDS);
+      }
     }
-    return [];
+    return DEFAULT_VISIBLE_FIELDS.slice();
+  }
+
+  function getFieldContainer(fieldId) {
+    var node = null;
+    if (fieldId === 'fecha') node = el.fechaPicker || el.fechaDisplay || el.fecha;
+    else if (fieldId === 'mes_anio') node = el.mesPreview;
+    else node = $(fieldId);
+    return node && node.closest ? node.closest('.field') : null;
+  }
+
+  function cacheFieldContainers() {
+    var allFields = DEFAULT_VISIBLE_FIELDS.concat(['concepto']);
+    var seen = {};
+    for (var i = 0; i < allFields.length; i++) {
+      var fieldId = allFields[i];
+      if (seen[fieldId]) continue;
+      seen[fieldId] = true;
+      el.fields[fieldId] = getFieldContainer(fieldId);
+    }
+    if (el.form) {
+      el.fieldsets = Array.prototype.slice.call(el.form.querySelectorAll('.fieldset'));
+    }
+  }
+
+  function clearFieldValue(fieldId) {
+    if (fieldId === 'fecha' || fieldId === 'concepto' || fieldId === 'mes_anio' || fieldId === 'balance') return;
+    var input = $(fieldId);
+    if (!input) return;
+    if (input.type === 'checkbox') {
+      input.checked = false;
+      return;
+    }
+    input.value = '';
+  }
+
+  function isFieldHidden(fieldId) {
+    return !!fieldState.hidden[fieldId];
+  }
+
+  function updateFieldsetVisibility() {
+    for (var i = 0; i < el.fieldsets.length; i++) {
+      var fieldset = el.fieldsets[i];
+      var fields = Array.prototype.slice.call(fieldset.querySelectorAll('.field'));
+      var hasVisibleField = false;
+      for (var f = 0; f < fields.length; f++) {
+        if (!fields[f].hidden) {
+          hasVisibleField = true;
+          break;
+        }
+      }
+      fieldset.hidden = !hasVisibleField;
+    }
+  }
+
+  function applyConceptRules() {
+    var conceptInput = $('concepto');
+    var concept = conceptInput ? conceptInput.value : '';
+    var visibleFields = getConceptVisibleFields(concept);
+    var visible = {};
+
+    for (var i = 0; i < visibleFields.length; i++) {
+      visible[visibleFields[i]] = true;
+    }
+
+    fieldState.hidden = {};
+    for (var j = 0; j < ALL_CONFIGURABLE_FIELDS.length; j++) {
+      var fieldId = ALL_CONFIGURABLE_FIELDS[j];
+      var hidden = !visible[fieldId];
+      var container = el.fields[fieldId];
+      fieldState.hidden[fieldId] = hidden;
+      if (container) container.hidden = hidden;
+      if (hidden) clearFieldValue(fieldId);
+    }
+
+    applyConceptDefaults(concept);
+    updateBalancePreview();
+    updateFieldsetVisibility();
+  }
+
+  function applyConceptDefaults(concept) {
+    if (normalizeConcept(concept) !== normalizeConcept('Salario doc')) return;
+    var laboratorio = $('laboratorio_profesional');
+    if (laboratorio && !isFieldHidden('laboratorio_profesional')) {
+      laboratorio.value = SALARIO_DOC_PROFESIONAL;
+    }
   }
 
   function showStatus(message, variant) {
@@ -84,52 +416,9 @@
     el.status.dataset.variant = variant || 'info';
   }
 
-  function fieldContainer(fieldId) {
-    var node = fieldId === 'fecha' ? el.fechaPicker : $(fieldId);
-    return node && node.closest ? node.closest('.field') : null;
-  }
-
-  function cacheFields() {
-    for (var i = 0; i < CONFIG_FIELDS.length; i++) {
-      fieldContainers[CONFIG_FIELDS[i]] = fieldContainer(CONFIG_FIELDS[i]);
-    }
-    fieldsets = el.form ? Array.prototype.slice.call(el.form.querySelectorAll('.fieldset')) : [];
-  }
-
-  function clearField(fieldId) {
-    if (fieldId === 'fecha') return;
-    var input = $(fieldId);
-    if (input) input.value = '';
-  }
-
-  function isHidden(fieldId) {
-    return !!hiddenFields[fieldId];
-  }
-
-  function updateFieldsets() {
-    for (var i = 0; i < fieldsets.length; i++) {
-      var fields = Array.prototype.slice.call(fieldsets[i].querySelectorAll('.field'));
-      fieldsets[i].hidden = !fields.some(function (field) {
-        return !field.hidden;
-      });
-    }
-  }
-
-  function applyConceptRules() {
-    var hidden = hideListForConcept($('concepto') ? $('concepto').value : '');
-    hiddenFields = {};
-    for (var i = 0; i < hidden.length; i++) hiddenFields[hidden[i]] = true;
-
-    for (var j = 0; j < CONFIG_FIELDS.length; j++) {
-      var fieldId = CONFIG_FIELDS[j];
-      var shouldHide = isHidden(fieldId);
-      if (fieldContainers[fieldId]) fieldContainers[fieldId].hidden = shouldHide;
-      if (shouldHide) clearField(fieldId);
-    }
-    updateBalancePreview();
-    updateFieldsets();
-  }
-
+  /**
+   * POR QUÉ: un solo GET al inicio evita “picos” de tráfico en datos móviles con debounce solo en CPU local.
+   */
   function fetchMeta() {
     if (!SCRIPT_URL || !SCRIPT_URL.trim()) {
       showStatus('Configura SCRIPT_URL en app.js para cargar listas y guardar.', 'info');
@@ -144,13 +433,8 @@
       })
       .then(function (data) {
         if (!data.ok) throw new Error(data.error || 'Meta inválida');
-        fillDatalist('list-concepto', data.concepto);
-        fillDatalist('list-tipo_examen', data.tipo_examen);
-        fillDatalist('list-laboratorio_profesional', data.laboratorio_profesional);
-        fillDatalist('list-pago_tercero', data.pago_tercero);
-        fillDatalist('list-pago_a_valvet', data.pago_a_valvet);
-        fillDatalist('list-paciente', data.pacientes);
-        fillDatalist('list-tutor', data.tutores);
+        metaCache = data;
+        applyMetaToDatalists(data);
         showStatus('Listas cargadas desde la hoja.', 'success');
         return data;
       })
@@ -161,26 +445,57 @@
       });
   }
 
-  function fillDatalist(id, values) {
+  function clearDatalist(id) {
     var dl = $(id);
     if (!dl) return;
-    dl.textContent = '';
+    while (dl.firstChild) dl.removeChild(dl.firstChild);
+  }
+
+  function fillDatalist(id, values) {
+    clearDatalist(id);
+    var dl = $(id);
+    if (!dl || !values) return;
     var frag = document.createDocumentFragment();
-    (values || []).forEach(function (value) {
+    for (var i = 0; i < values.length; i++) {
       var opt = document.createElement('option');
-      opt.value = value;
+      opt.value = values[i];
       frag.appendChild(opt);
-    });
+    }
     dl.appendChild(frag);
   }
 
+  function applyMetaToDatalists(data) {
+    fillDatalist('list-concepto', data.concepto);
+    fillDatalist('list-tipo_examen', data.tipo_examen);
+    fillDatalist('list-laboratorio_profesional', withRequiredOption(data.laboratorio_profesional, SALARIO_DOC_PROFESIONAL));
+    fillDatalist('list-pago_tercero', data.pago_tercero);
+    fillDatalist('list-pago_a_valvet', data.pago_a_valvet);
+    fillDatalist('list-paciente', data.pacientes);
+    fillDatalist('list-tutor', data.tutores);
+  }
+
+  function withRequiredOption(values, requiredValue) {
+    var out = values ? values.slice() : [];
+    var requiredKey = normalizeConcept(requiredValue);
+    for (var i = 0; i < out.length; i++) {
+      if (normalizeConcept(out[i]) === requiredKey) return out;
+    }
+    out.unshift(requiredValue);
+    return out;
+  }
+
+  /** Solo dígitos → entero (pesos COP sin decimales en MVP). */
   function parseDigitsToInt(str) {
     if (!str || typeof str !== 'string') return 0;
-    var digits = str.replace(/\D/g, '');
-    var n = parseInt(digits, 10);
+    var d = str.replace(/\D/g, '');
+    if (!d) return 0;
+    var n = parseInt(d, 10);
     return isNaN(n) ? 0 : n;
   }
 
+  /**
+   * POR QUÉ: el usuario escribe cifras; el formato con puntos es presentación, no otra capa de datos.
+   */
   function formatCopMaskFromDigits(digitStr) {
     var n = parseDigitsToInt(digitStr);
     if (n === 0 && (!digitStr || !/\d/.test(digitStr))) return '';
@@ -190,33 +505,53 @@
   function wireMoneyInput(input) {
     if (!input) return;
     input.addEventListener('input', function () {
-      input.value = formatCopMaskFromDigits(input.value.replace(/\D/g, ''));
+      var raw = input.value;
+      var digits = raw.replace(/\D/g, '');
+      var masked = formatCopMaskFromDigits(digits);
+      input.value = masked;
       updateBalancePreview();
     });
-    input.addEventListener('blur', updateBalancePreview);
+    input.addEventListener('blur', function () {
+      if (!input.value.trim()) input.value = '';
+      updateBalancePreview();
+    });
   }
 
   function getMoneyNumber(input) {
-    if (input && isHidden(input.id)) return 0;
+    if (input && isFieldHidden(input.id)) return 0;
     return parseDigitsToInt(input ? input.value : '');
   }
 
   function formatBalanceDisplay(num) {
     var n = Math.round(Number(num));
     if (isNaN(n)) n = 0;
-    var sign = n < 0 ? '-' : '';
-    return sign + Math.abs(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    var neg = n < 0;
+    var abs = Math.abs(n);
+    var s = abs.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return neg ? '-' + s : s;
   }
 
   function updateBalancePreview() {
     if (!el.balance) return;
-    el.balance.textContent = formatBalanceDisplay(getMoneyNumber(el.ingresos) - getMoneyNumber(el.salidas));
+    var ing = getMoneyNumber(el.ingresos);
+    var sal = getMoneyNumber(el.salidas);
+    el.balance.textContent = formatBalanceDisplay(ing - sal);
   }
 
+  /** Vista previa local; el valor oficial de mes_anio lo calcula GAS al guardar. */
   function updateMesAnioPreview() {
     if (!el.fecha || !el.mesPreview) return;
-    var parts = (el.fecha.value || '').split('-');
-    el.mesPreview.textContent = parts.length === 3 ? parts[1] + '/' + parts[0] : '—';
+    var v = el.fecha.value;
+    if (!v) {
+      el.mesPreview.textContent = '—';
+      return;
+    }
+    var p = v.split('-');
+    if (p.length !== 3) {
+      el.mesPreview.textContent = '—';
+      return;
+    }
+    el.mesPreview.textContent = p[1] + '/' + p[0];
   }
 
   function parseIsoDateParts(iso) {
@@ -225,27 +560,38 @@
     var year = parseInt(p[0], 10);
     var month = parseInt(p[1], 10);
     var day = parseInt(p[2], 10);
-    var date = new Date(year, month - 1, day);
-    if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
-    return { year: year, month: month, day: day, date: date };
+    var dt = new Date(year, month - 1, day);
+    if (dt.getFullYear() !== year || dt.getMonth() !== month - 1 || dt.getDate() !== day) return null;
+    return { year: year, month: month, day: day, date: dt };
   }
 
   function formatIsoDate(year, monthIndex, day) {
-    return String(year) + '-' + String(monthIndex + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+    var mm = String(monthIndex + 1).padStart(2, '0');
+    var dd = String(day).padStart(2, '0');
+    return String(year) + '-' + mm + '-' + dd;
   }
 
   function formatDateDisplay(iso) {
     var parsed = parseIsoDateParts(iso);
     if (!parsed) return '';
-    return new Intl.DateTimeFormat('es-CO', { day: '2-digit', month: 'long', year: 'numeric' }).format(parsed.date);
+    return new Intl.DateTimeFormat('es-CO', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    }).format(parsed.date);
   }
 
   function setSelectedDate(iso) {
     calendarState.selectedIso = iso || '';
     if (el.fecha) el.fecha.value = iso || '';
     if (el.fechaDisplay) el.fechaDisplay.value = formatDateDisplay(iso);
+    if (el.fechaDisplay) el.fechaDisplay.setAttribute('aria-invalid', iso ? 'false' : 'true');
     updateMesAnioPreview();
     renderCalendar();
+  }
+
+  function clearSelectedDate() {
+    setSelectedDate('');
   }
 
   function syncCalendarViewFromSelected() {
@@ -270,18 +616,41 @@
     if (el.fechaDisplay) el.fechaDisplay.setAttribute('aria-expanded', 'false');
   }
 
+  function toggleCalendar() {
+    if (!el.fechaCalendar) return;
+    if (el.fechaCalendar.hidden) {
+      openCalendar();
+    } else {
+      closeCalendar();
+    }
+  }
+
+  function isSameDay(a, b) {
+    return (
+      a.getFullYear() === b.getFullYear() &&
+      a.getMonth() === b.getMonth() &&
+      a.getDate() === b.getDate()
+    );
+  }
+
   function renderCalendar() {
     if (!el.fechaGrid || !el.fechaMonthLabel) return;
+
     var monthDate = new Date(calendarState.viewYear, calendarState.viewMonth, 1);
+    el.fechaMonthLabel.textContent = new Intl.DateTimeFormat('es-CO', {
+      month: 'long',
+      year: 'numeric',
+    }).format(monthDate);
+
+    el.fechaGrid.textContent = '';
+
     var firstDayIndex = (monthDate.getDay() + 6) % 7;
     var daysInMonth = new Date(calendarState.viewYear, calendarState.viewMonth + 1, 0).getDate();
     var prevMonthDays = new Date(calendarState.viewYear, calendarState.viewMonth, 0).getDate();
     var totalCells = Math.ceil((firstDayIndex + daysInMonth) / 7) * 7;
     var selected = parseIsoDateParts(calendarState.selectedIso);
+    var selectedDate = selected ? selected.date : null;
     var today = new Date();
-
-    el.fechaMonthLabel.textContent = new Intl.DateTimeFormat('es-CO', { month: 'long', year: 'numeric' }).format(monthDate);
-    el.fechaGrid.textContent = '';
 
     for (var i = 0; i < totalCells; i++) {
       var dayNumber = i - firstDayIndex + 1;
@@ -290,19 +659,19 @@
       var inCurrentMonth = true;
 
       if (dayNumber < 1) {
-        cellMonth--;
+        cellMonth -= 1;
         if (cellMonth < 0) {
           cellMonth = 11;
-          cellYear--;
+          cellYear -= 1;
         }
         dayNumber = prevMonthDays + dayNumber;
         inCurrentMonth = false;
       } else if (dayNumber > daysInMonth) {
         dayNumber -= daysInMonth;
-        cellMonth++;
+        cellMonth += 1;
         if (cellMonth > 11) {
           cellMonth = 0;
-          cellYear++;
+          cellYear += 1;
         }
         inCurrentMonth = false;
       }
@@ -312,29 +681,36 @@
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'date-day' + (inCurrentMonth ? '' : ' date-day-other');
-      if (sameDay(cellDate, today)) btn.className += ' date-day-today';
-      if (selected && sameDay(cellDate, selected.date)) btn.className += ' date-day-selected';
+      if (isSameDay(cellDate, today)) btn.className += ' date-day-today';
+      if (selectedDate && isSameDay(cellDate, selectedDate)) btn.className += ' date-day-selected';
       btn.textContent = String(dayNumber);
       btn.dataset.iso = iso;
       btn.setAttribute('role', 'gridcell');
+      btn.setAttribute(
+        'aria-label',
+        new Intl.DateTimeFormat('es-CO', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        }).format(cellDate)
+      );
       btn.addEventListener('click', function (ev) {
-        var parsed = parseIsoDateParts(ev.currentTarget.dataset.iso);
+        var nextIso = ev.currentTarget.dataset.iso;
+        var parsed = parseIsoDateParts(nextIso);
         if (!parsed) return;
         calendarState.viewYear = parsed.year;
         calendarState.viewMonth = parsed.month - 1;
-        setSelectedDate(ev.currentTarget.dataset.iso);
+        setSelectedDate(nextIso);
         closeCalendar();
       });
       el.fechaGrid.appendChild(btn);
     }
   }
 
-  function sameDay(a, b) {
-    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-  }
-
   function wireDatePicker() {
     if (!el.fecha || !el.fechaDisplay || !el.fechaPicker) return;
+
     var initial = parseIsoDateParts(el.fecha.value);
     if (initial) {
       calendarState.selectedIso = el.fecha.value;
@@ -343,6 +719,7 @@
       el.fechaDisplay.value = formatDateDisplay(el.fecha.value);
     } else {
       syncCalendarViewFromSelected();
+      el.fechaDisplay.value = '';
     }
 
     el.fechaDisplay.addEventListener('click', openCalendar);
@@ -352,47 +729,58 @@
         openCalendar();
       }
     });
-    if (el.fechaToggle) el.fechaToggle.addEventListener('click', function () {
-      if (el.fechaCalendar.hidden) openCalendar();
-      else closeCalendar();
-    });
-    if (el.fechaPrev) el.fechaPrev.addEventListener('click', function () {
-      calendarState.viewMonth--;
-      if (calendarState.viewMonth < 0) {
-        calendarState.viewMonth = 11;
-        calendarState.viewYear--;
-      }
-      renderCalendar();
-    });
-    if (el.fechaNext) el.fechaNext.addEventListener('click', function () {
-      calendarState.viewMonth++;
-      if (calendarState.viewMonth > 11) {
-        calendarState.viewMonth = 0;
-        calendarState.viewYear++;
-      }
-      renderCalendar();
-    });
+
+    if (el.fechaToggle) el.fechaToggle.addEventListener('click', toggleCalendar);
+    if (el.fechaPrev) {
+      el.fechaPrev.addEventListener('click', function () {
+        calendarState.viewMonth -= 1;
+        if (calendarState.viewMonth < 0) {
+          calendarState.viewMonth = 11;
+          calendarState.viewYear -= 1;
+        }
+        renderCalendar();
+      });
+    }
+    if (el.fechaNext) {
+      el.fechaNext.addEventListener('click', function () {
+        calendarState.viewMonth += 1;
+        if (calendarState.viewMonth > 11) {
+          calendarState.viewMonth = 0;
+          calendarState.viewYear += 1;
+        }
+        renderCalendar();
+      });
+    }
+
     document.addEventListener('click', function (ev) {
       if (!el.fechaPicker.contains(ev.target)) closeCalendar();
     });
+
     document.addEventListener('keydown', function (ev) {
       if (ev.key === 'Escape') closeCalendar();
     });
+
     renderCalendar();
     updateMesAnioPreview();
   }
 
-  function textValue(fieldId) {
-    if (isHidden(fieldId)) return NA_VALUE;
-    var input = $(fieldId);
-    return input ? input.value.trim() : '';
-  }
-
-  function moneyValue(fieldId, input) {
-    return isHidden(fieldId) ? NA_VALUE : getMoneyNumber(input);
-  }
-
   function buildPayload() {
+    function textValue(fieldId) {
+      if (isFieldHidden(fieldId)) return NA_VALUE;
+      var input = $(fieldId);
+      return input ? input.value.trim() : '';
+    }
+
+    function moneyValue(fieldId, input) {
+      return isFieldHidden(fieldId) ? NA_VALUE : getMoneyNumber(input);
+    }
+
+    function checkboxValue(fieldId) {
+      if (isFieldHidden(fieldId)) return NA_VALUE;
+      var input = $(fieldId);
+      return input && input.checked ? 'Si' : 'No';
+    }
+
     return {
       fecha: el.fecha ? el.fecha.value : '',
       concepto: $('concepto').value.trim(),
@@ -405,8 +793,8 @@
       pago_a_valvet: textValue('pago_a_valvet'),
       ingresos: moneyValue('ingresos', el.ingresos),
       salidas: moneyValue('salidas', el.salidas),
-      factura_electronica: textValue('factura_electronica'),
-      hidden_fields: CONFIG_FIELDS.filter(isHidden),
+      factura_electronica: checkboxValue('factura_electronica'),
+      hidden_fields: ALL_CONFIGURABLE_FIELDS.filter(isFieldHidden),
     };
   }
 
@@ -441,14 +829,15 @@
         if (r.body && r.body.ok) {
           showStatus('Registro guardado en la hoja.', 'success');
           el.form.reset();
-          setSelectedDate('');
+          clearSelectedDate();
           if (el.balance) el.balance.textContent = '0';
           syncCalendarViewFromSelected();
           renderCalendar();
           applyConceptRules();
           return fetchMeta();
         }
-        throw new Error((r.body && r.body.error) || 'Error al guardar');
+        var msg = (r.body && r.body.error) || 'Error al guardar';
+        throw new Error(msg);
       })
       .catch(function (err) {
         console.error(err);
@@ -457,6 +846,18 @@
       .then(function () {
         el.btn.disabled = false;
       });
+  }
+
+  function debounce(fn, ms) {
+    var t;
+    return function () {
+      var ctx = this;
+      var args = arguments;
+      clearTimeout(t);
+      t = setTimeout(function () {
+        fn.apply(ctx, args);
+      }, ms);
+    };
   }
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -480,15 +881,18 @@
     wireMoneyInput(el.ingresos);
     wireMoneyInput(el.salidas);
     updateBalancePreview();
+
     wireDatePicker();
-    cacheFields();
+    cacheFieldContainers();
 
     if (el.form) el.form.addEventListener('submit', submitForm);
-    if ($('concepto')) {
-      $('concepto').addEventListener('input', applyConceptRules);
-      $('concepto').addEventListener('change', applyConceptRules);
+    var concepto = $('concepto');
+    if (concepto) {
+      concepto.addEventListener('input', applyConceptRules);
+      concepto.addEventListener('change', applyConceptRules);
     }
     applyConceptRules();
+
     fetchMeta();
   });
 })();

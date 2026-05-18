@@ -90,7 +90,8 @@ function uniqueColumnValues_(sheet, colIndex1Based, maxRows) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
   var end = Math.min(lastRow, 1 + maxRows);
-  var range = sheet.getRange(2, colIndex1Based, end, colIndex1Based);
+  var numRows = end - 1;
+  var range = sheet.getRange(2, colIndex1Based, numRows, 1);
   var vals = range.getValues();
   var seen = {};
   var out = [];
@@ -113,6 +114,7 @@ function appendRowFromPayload_(data) {
   var hm = readHeaderMap_(sheet);
   var headers = sheet.getRange(1, 1, 1, hm.colCount).getValues()[0];
   var record = buildRecordFromPayload_(data, hm.map);
+  var freeTextFields = resolveKnownColumnValues_(sheet, hm.map, record, ['laboratorio_profesional']);
   var row = [];
   for (var i = 0; i < headers.length; i++) {
     var name = String(headers[i]).trim();
@@ -123,7 +125,71 @@ function appendRowFromPayload_(data) {
     row.push(record[name] !== undefined && record[name] !== null ? record[name] : '');
   }
   var targetRow = findFirstEmptyRecordRow_(sheet, hm.map);
+  clearRowValidationsForNewText_(sheet, targetRow, hm.map, freeTextFields);
   sheet.getRange(targetRow, 1, 1, row.length).setValues([row]);
+  setBalanceFormula_(sheet, targetRow, hm.map);
+}
+
+function resolveKnownColumnValues_(sheet, headerMap, record, fieldNames) {
+  var freeTextFields = [];
+  for (var i = 0; i < fieldNames.length; i++) {
+    var fieldName = fieldNames[i];
+    var value = record[fieldName];
+    var col = headerMap[fieldName];
+    if (!col || value === null || value === undefined || value === '') continue;
+
+    var canonical = findCanonicalColumnValue_(sheet, col, value);
+    if (canonical) {
+      record[fieldName] = canonical;
+    } else {
+      freeTextFields.push(fieldName);
+    }
+  }
+  return freeTextFields;
+}
+
+function findCanonicalColumnValue_(sheet, colIndex1Based, value) {
+  var needle = normalizeText_(value);
+  if (!needle) return '';
+  var values = uniqueColumnValues_(sheet, colIndex1Based, MAX_SCAN_ROWS);
+  for (var i = 0; i < values.length; i++) {
+    if (normalizeText_(values[i]) === needle) return values[i];
+  }
+  return '';
+}
+
+function clearRowValidationsForNewText_(sheet, rowIndex1Based, headerMap, fieldNames) {
+  for (var i = 0; i < fieldNames.length; i++) {
+    var col = headerMap[fieldNames[i]];
+    if (col) sheet.getRange(rowIndex1Based, col).clearDataValidations();
+  }
+}
+
+function setBalanceFormula_(sheet, rowIndex1Based, headerMap) {
+  var ingresosCol = headerMap.ingresos;
+  var salidasCol = headerMap.salidas;
+  var balanceCol = headerMap.balance;
+  if (!ingresosCol || !salidasCol || !balanceCol) return;
+
+  var ingresosRef = columnToLetter_(ingresosCol) + rowIndex1Based;
+  var salidasRef = columnToLetter_(salidasCol) + rowIndex1Based;
+  var formula = '=' + sheetNumberValueFormula_(ingresosRef) + '-' + sheetNumberValueFormula_(salidasRef);
+  sheet.getRange(rowIndex1Based, balanceCol).setFormula(formula);
+}
+
+function sheetNumberValueFormula_(cellRef) {
+  return 'IFERROR(VALUE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(TO_TEXT(' + cellRef + '),"$",""),".",""),",","")),0)';
+}
+
+function columnToLetter_(colIndex1Based) {
+  var col = colIndex1Based;
+  var letter = '';
+  while (col > 0) {
+    var mod = (col - 1) % 26;
+    letter = String.fromCharCode(65 + mod) + letter;
+    col = Math.floor((col - mod) / 26);
+  }
+  return letter;
 }
 
 function findFirstEmptyRecordRow_(sheet, headerMap) {
@@ -160,8 +226,8 @@ function findFirstEmptyRecordRow_(sheet, headerMap) {
 }
 
 /**
- * POR QUÉ: mes_anio y balance se recalculan aquí para una sola fuente de verdad (evita
- * discrepancias entre lo que muestra el celular y lo que queda en obra / hoja).
+ * POR QUÉ: mes_anio se recalcula aquí para una sola fuente de verdad; balance queda como
+ * fórmula en la hoja para responder a ediciones manuales de ingresos o salidas.
  */
 function buildRecordFromPayload_(data, headerMap) {
   var out = {};
@@ -176,11 +242,11 @@ function buildRecordFromPayload_(data, headerMap) {
 
   var ing = parseCopInteger_(data.ingresos);
   var sal = parseCopInteger_(data.salidas);
-  var bal = ing - sal;
+  var concepto = sanitizeString_(data.concepto, MAX_STRING_LEN);
 
   out.fecha = fechaDisplay;
   out.mes_anio = mesAnio;
-  out.concepto = sanitizeString_(data.concepto, MAX_STRING_LEN);
+  out.concepto = concepto;
   out.paciente = payloadTextValue_(data, hidden, 'paciente');
   out.tutor = payloadTextValue_(data, hidden, 'tutor');
   out.tipo_examen = payloadTextValue_(data, hidden, 'tipo_examen');
@@ -188,9 +254,8 @@ function buildRecordFromPayload_(data, headerMap) {
   out.laboratorio_profesional = payloadTextValue_(data, hidden, 'laboratorio_profesional');
   out.pago_tercero = payloadTextValue_(data, hidden, 'pago_tercero');
   out.pago_a_valvet = payloadTextValue_(data, hidden, 'pago_a_valvet');
-  out.ingresos = hidden.ingresos ? NA_VALUE : ing;
+  out.ingresos = hidden.ingresos && !isConcept_(concepto, 'Transporte') ? NA_VALUE : ing;
   out.salidas = hidden.salidas ? NA_VALUE : sal;
-  out.balance = bal;
   out.factura_electronica = payloadTextValue_(data, hidden, 'factura_electronica');
 
   var needed = [
@@ -230,6 +295,19 @@ function hiddenFieldMap_(fields) {
 function payloadTextValue_(data, hidden, fieldName) {
   if (hidden[fieldName]) return NA_VALUE;
   return sanitizeString_(data[fieldName], MAX_STRING_LEN);
+}
+
+function isConcept_(value, expected) {
+  return normalizeText_(value) === normalizeText_(expected);
+}
+
+function normalizeText_(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
 }
 
 function sanitizeString_(s, maxLen) {

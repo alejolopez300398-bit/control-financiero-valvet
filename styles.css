@@ -230,6 +230,60 @@ body::before {
   background: #fff;
 }
 
+.check-control {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-height: var(--touch-min);
+  color: var(--color-ink);
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.input-check {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+}
+
+.check-box {
+  display: grid;
+  place-items: center;
+  flex: 0 0 1.45rem;
+  width: 1.45rem;
+  height: 1.45rem;
+  border: 1.5px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--field-alpha);
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.check-box::after {
+  content: "";
+  width: 0.42rem;
+  height: 0.78rem;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  opacity: 0;
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+
+.input-check:checked + .check-box {
+  background: var(--color-green);
+  border-color: var(--color-green);
+}
+
+.input-check:checked + .check-box::after {
+  opacity: 1;
+}
+
+.input-check:focus + .check-box {
+  border-color: var(--color-green-bright);
+  box-shadow: 0 0 0 3px rgba(70, 165, 95, 0.2);
+}
+
 .input-date {
   color-scheme: light;
 }
