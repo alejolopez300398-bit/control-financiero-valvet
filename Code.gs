@@ -36,6 +36,10 @@ function doPost(e) {
       updateCellFromPayload_(data);
       return jsonResponse_({ ok: true });
     }
+    if (data && data.action === 'deleteRow') {
+      deleteRowFromPayload_(data);
+      return jsonResponse_({ ok: true });
+    }
     appendRowFromPayload_(data);
     return jsonResponse_({ ok: true });
   } catch (err) {
@@ -193,6 +197,7 @@ function appendRowFromPayload_(data) {
   var hm = readHeaderMap_(sheet);
   var headers = sheet.getRange(1, 1, 1, hm.colCount).getValues()[0];
   var record = buildRecordFromPayload_(data, hm.map);
+  canonicalizeRecordValues_(sheet, hm.map, record, ['pago_tercero', 'pago_a_valvet']);
   var freeTextFields = resolveKnownColumnValues_(sheet, hm.map, record, ['laboratorio_profesional']);
   var row = [];
   for (var i = 0; i < headers.length; i++) {
@@ -230,11 +235,41 @@ function updateCellFromPayload_(data) {
   if (fieldName === 'fecha') {
     setFechaAndMesAnio_(sheet, rowIndex, hm.map, value);
   } else {
+    value = canonicalEditableValue_(sheet, hm.map, fieldName, value);
     sheet.getRange(rowIndex, colIndex).setValue(value);
   }
 
   if (fieldName === 'ingresos' || fieldName === 'salidas') {
     setBalanceFormula_(sheet, rowIndex, hm.map);
+  }
+}
+
+function deleteRowFromPayload_(data) {
+  var sheet = getTargetSheet_();
+  var rowIndex = parseInt(data.row, 10);
+  if (!rowIndex || rowIndex < 2 || rowIndex > sheet.getLastRow()) {
+    throw new Error('Fila invalida');
+  }
+  sheet.deleteRow(rowIndex);
+}
+
+function canonicalEditableValue_(sheet, headerMap, fieldName, value) {
+  var canonicalFields = {
+    pago_tercero: true,
+    pago_a_valvet: true,
+  };
+  if (!canonicalFields[fieldName]) return value;
+
+  var col = headerMap[fieldName];
+  var canonical = col ? findCanonicalColumnValue_(sheet, col, value) : '';
+  return canonical || value;
+}
+
+function canonicalizeRecordValues_(sheet, headerMap, record, fieldNames) {
+  for (var i = 0; i < fieldNames.length; i++) {
+    var fieldName = fieldNames[i];
+    if (record[fieldName] === null || record[fieldName] === undefined || record[fieldName] === '') continue;
+    record[fieldName] = canonicalEditableValue_(sheet, headerMap, fieldName, record[fieldName]);
   }
 }
 

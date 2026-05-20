@@ -11,6 +11,7 @@
   var DEBOUNCE_MS = 320;
   var metaCache = null;
   var NA_VALUE = 'N/A';
+  var ACTION_COLUMN_LABEL = 'Acciones';
   var SALARIO_DOC_PROFESIONAL = 'Valentina Triviño';
   var ALL_CONFIGURABLE_FIELDS = [
     'fecha',
@@ -667,6 +668,12 @@
     syncColumnFilters();
 
     var labelRow = document.createElement('tr');
+    var actionTh = document.createElement('th');
+    actionTh.scope = 'col';
+    actionTh.className = 'table-action-heading';
+    actionTh.textContent = ACTION_COLUMN_LABEL;
+    labelRow.appendChild(actionTh);
+
     for (var i = 0; i < recordsState.headers.length; i++) {
       var th = document.createElement('th');
       th.scope = 'col';
@@ -677,6 +684,10 @@
 
     var filterRow = document.createElement('tr');
     filterRow.className = 'table-filter-row';
+    var actionFilterTh = document.createElement('th');
+    actionFilterTh.scope = 'col';
+    actionFilterTh.className = 'table-action-heading';
+    filterRow.appendChild(actionFilterTh);
     for (var j = 0; j < recordsState.headers.length; j++) {
       filterRow.appendChild(buildColumnFilterCell(j, 'Filtrar ' + recordsState.headers[j]));
     }
@@ -702,6 +713,7 @@
   function buildTableRow(row) {
     var tr = document.createElement('tr');
     var values = row.values || [];
+    tr.appendChild(buildRecordActionCell(row));
     for (var i = 0; i < recordsState.headers.length; i++) {
       var td = document.createElement('td');
       var value = values[i] === null || values[i] === undefined ? '' : String(values[i]).trim();
@@ -715,6 +727,43 @@
       tr.appendChild(td);
     }
     return tr;
+  }
+
+  function buildRecordActionCell(row) {
+    var td = document.createElement('td');
+    td.className = 'table-action-cell';
+
+    var button = document.createElement('button');
+    button.className = 'record-delete-btn';
+    button.type = 'button';
+    button.dataset.row = String(row.sheetRow || '');
+    button.setAttribute('aria-label', 'Eliminar fila ' + (row.sheetRow || ''));
+    button.title = 'Eliminar de la vista y de Google Sheets';
+    button.appendChild(buildTrashIcon());
+
+    td.appendChild(button);
+    return td;
+  }
+
+  function buildTrashIcon() {
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+
+    var paths = [
+      'M3 6h18',
+      'M8 6V4h8v2',
+      'M6 6l1 15h10l1-15',
+      'M10 11v6',
+      'M14 11v6',
+    ];
+    for (var i = 0; i < paths.length; i++) {
+      var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', paths[i]);
+      svg.appendChild(path);
+    }
+    return svg;
   }
 
   function applyRecordCellClasses(cell, header, value) {
@@ -755,6 +804,9 @@
     var totals = calculateMoneyTotals(rows, moneyIndexes);
     var tr = document.createElement('tr');
     tr.className = 'table-total-row';
+    var actionTd = document.createElement('td');
+    actionTd.className = 'table-action-cell';
+    tr.appendChild(actionTd);
 
     for (var i = 0; i < recordsState.headers.length; i++) {
       var td = document.createElement('td');
@@ -873,7 +925,7 @@
   function getControlledFieldOptions(fieldName) {
     var key = normalizeConcept(fieldName);
     if (key === 'pago_tercero') return ['Pendiente', 'Ejecutado', NA_VALUE];
-    if (key === 'pago_a_valvet') return ['Datafono', 'efectivo', 'transferencia', NA_VALUE, 'Pendiente'];
+    if (key === 'pago_a_valvet') return ['Datafono', 'Efectivo', 'Transferencia', NA_VALUE, 'Pendiente'];
     return null;
   }
 
@@ -952,6 +1004,57 @@
         setTableStatus(err.message || 'No se pudo guardar el cambio.', 'error');
         return false;
       });
+  }
+
+  function deleteRecordRow(row) {
+    if (!SCRIPT_URL || !SCRIPT_URL.trim()) {
+      setTableStatus('Configura SCRIPT_URL en app.js para eliminar filas.', 'error');
+      return Promise.resolve(false);
+    }
+
+    setTableStatus('Eliminando fila...', 'info');
+
+    return fetch(SCRIPT_URL.replace(/\?$/, ''), {
+      method: 'POST',
+      mode: 'cors',
+      credentials: 'omit',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'deleteRow',
+        row: row,
+      }),
+    })
+      .then(function (res) {
+        return res.json().then(function (body) {
+          return { ok: res.ok, body: body };
+        });
+      })
+      .then(function (r) {
+        if (r.body && r.body.ok) {
+          setTableStatus('Fila eliminada de Google Sheets.', 'success');
+          return true;
+        }
+        throw new Error((r.body && r.body.error) || 'Error al eliminar la fila');
+      })
+      .catch(function (err) {
+        console.error(err);
+        setTableStatus(err.message || 'No se pudo eliminar la fila.', 'error');
+        return false;
+      });
+  }
+
+  function requestDeleteRecordRow(row) {
+    if (!row) return;
+    var ok = window.confirm('Eliminar esta fila de la vista y de Google Sheets? Esta accion no se puede deshacer.');
+    if (!ok) return;
+
+    deleteRecordRow(row).then(function (deleted) {
+      if (!deleted) return;
+      recordsState.loaded = false;
+      fetchRecords().then(function () {
+        if (document.body.dataset.currentView === 'resumen') renderFinancialSummary();
+      });
+    });
   }
 
   function updateTableCount(visibleRows) {
@@ -1173,7 +1276,7 @@
     if (!rows.length) {
       var emptyRow = document.createElement('tr');
       var emptyCell = document.createElement('td');
-      emptyCell.colSpan = 7;
+      emptyCell.colSpan = 8;
       emptyCell.textContent = 'No hay registros pendientes para mostrar.';
       emptyRow.appendChild(emptyCell);
       el.financeDetailBody.appendChild(emptyRow);
@@ -1205,7 +1308,7 @@
       getCellByIndex(values, index, 'concepto'),
       getCellByIndex(values, index, 'paciente'),
       getCellByIndex(values, index, 'tutor'),
-      getCellByIndex(values, index, paymentHeader),
+      getCellByIndex(values, index, 'laboratorio_profesional'),
       formatMoneyForSummary(parseDisplayMoney_(getCellByIndex(values, index, valueHeader))),
     ];
 
@@ -1214,7 +1317,49 @@
       cell.textContent = cells[i] || 'N/A';
       tr.appendChild(cell);
     }
+
+    tr.appendChild(buildFinancialPaymentCell(row, values, index, paymentHeader));
     return tr;
+  }
+
+  function buildFinancialPaymentCell(row, values, index, paymentHeader) {
+    var cell = document.createElement('td');
+    var select = buildCellSelect(paymentHeader, getCellByIndex(values, index, paymentHeader), getControlledFieldOptions(paymentHeader));
+    select.className += ' finance-payment-select';
+    select.dataset.row = String(row.sheetRow || '');
+    select.dataset.field = paymentHeader;
+    cell.appendChild(select);
+    return cell;
+  }
+
+  function commitFinancialPaymentEdit(select) {
+    if (!select || recordsState.savingCell) return;
+    var row = select.dataset.row;
+    var field = select.dataset.field;
+    var value = select.value;
+    recordsState.savingCell = true;
+    select.disabled = true;
+    setFinanceStatus('Guardando pago...', 'info');
+
+    updateRecordCell(row, field, value)
+      .then(function (ok) {
+        if (!ok) {
+          setFinanceStatus('No se pudo guardar el pago.', 'error');
+          select.disabled = false;
+          return false;
+        }
+        recordsState.loaded = false;
+        return fetchRecords().then(function (data) {
+          if (data) {
+            renderFinancialSummary();
+            setFinanceStatus('Pago actualizado en Google Sheets.', 'success');
+          }
+          return !!data;
+        });
+      })
+      .then(function () {
+        recordsState.savingCell = false;
+      });
   }
 
   function formatMoneyForSummary(value) {
@@ -1652,6 +1797,12 @@
 
     if (el.tableBody) {
       el.tableBody.addEventListener('click', function (ev) {
+        var deleteButton = ev.target.closest('.record-delete-btn');
+        if (deleteButton) {
+          ev.preventDefault();
+          requestDeleteRecordRow(deleteButton.dataset.row);
+          return;
+        }
         var cell = ev.target.closest('td[data-field]');
         if (cell) startCellEdit(cell);
       });
@@ -1679,6 +1830,14 @@
         var card = ev.target.closest('.finance-kpi-action');
         if (!card) return;
         showFinancialDetail(card.dataset.detailType);
+      });
+    }
+
+    if (el.financeDetailBody) {
+      el.financeDetailBody.addEventListener('change', function (ev) {
+        var select = ev.target.closest('.finance-payment-select');
+        if (!select) return;
+        commitFinancialPaymentEdit(select);
       });
     }
   }
